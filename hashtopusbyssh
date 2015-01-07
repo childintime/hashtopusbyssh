@@ -1,0 +1,325 @@
+#!/bin/bash
+
+# v0.1
+
+# TODO:
+#
+# cleanup command?
+# fans!!!!
+# blank options in config file
+
+# default config options
+
+#ssh
+sshusername=`whoami`
+sshport=22
+
+#hashcat
+oclhashcat="oclHashcat-1.31"
+cudahashcat="cudaHashcat-1.31"
+hashcatdownload="no"
+
+
+#hashtopus
+hashtopusserver="http://localhost/hashtopus"
+hashtopuspath="hashtopus"
+hashtopuslog="hashtopus.log"
+hashtopuspgid="hashtopus.pgid"
+
+# non configurable variables
+hashtopusexe="hashtopus.exe"
+
+voucherfile="hashtopus.vouchers"
+
+if [ $# -lt 1 ]
+then
+        echo "bad arguments, for usage run: $0 -h"
+        exit
+fi
+
+usage="$(basename \"$0\") [-h] -c command -C configurationfile -H hostconfigurationfile
+
+where:
+    -h  show this help text
+    -c  command to be run, available commands: start, stop.
+    -C	configuration file for script
+    -H  hosts configuration file
+    "
+
+while getopts "hc:i:H:C:" arg; do
+  case $arg in
+    h)
+      echo "$0 is utility for easier controling hashtopus agent on several hosts"
+      echo "$usage"
+	
+      ;;
+    c)
+      command="$OPTARG"
+      ;;
+    H)
+      hostsfile="$OPTARG"
+      if [ ! -f "$hostsfile" ]
+		    then
+          echo "ERROR: Hosts config file \"$hostsfile\" doesn't exist"
+        	exit
+		  fi
+      ;;
+    C)
+      configfile="$OPTARG"
+      if [ ! -f "$configfile" ]
+        then
+          echo "ERROR: Config file \"$configfile\" doesn't exist"
+          exit
+      fi
+      ;;
+#    V)
+#     voucherfile="$OPTARG"
+#      if [ ! -f "$voucherfile" ]
+#        then
+#          echo "ERROR: Voucher file \"$voucherfile\" doesn't exist"
+#          exit
+#      fi
+#    ;;  
+  esac
+done
+
+parsehostsfile() {
+
+a=`cat $1 | sed -e 's/#.*$//' -e '/^\s*$/d'`
+if [ -z "$a" ] ; then
+  echo "no defined hosts in $1"
+  exit
+fi
+
+while IFS=":" read host username port hosthashtopuspath hosthashcatpath platform driverversion download notes
+do
+
+
+if [ -z "$host" ]; then
+    echo "host cannot be blank, skipping line"
+  else
+
+  #ssh
+  if [ -z "$username" ]; then
+    username="$sshusername"
+  fi
+
+  if [ -z "$port" ]; then
+    port="$sshport"
+  fi
+
+  # hashtopus
+  if [ -z "$hosthashtopuspath" ]; then
+    hosthashtopuspath="$hashtopuspath"
+  fi  
+
+  # hashcat
+  if [ -z "$hosthashcatpath" ]; then
+    if [ "$platform" == "ati" ]; then
+      hosthashcatpath="$oclhashcat"
+    else 
+      if [ "$platform" == "nvidia" ]; then
+      hosthashcatpath="$cudahashcat"
+      else 
+      echo "ERROR: wrong platform $platform"
+      exit 1
+      fi
+    fi
+  fi
+
+  if [ -z "$driverversion" ]; then
+    if [ "$platform" == "ati" ]; then
+      echo "ERROR: driver version is required on ATI platform"
+      exit 1
+    fi
+  fi
+
+  if [ -z "$download" ]; then
+    download="$hashcatdownload"
+  fi
+
+  hosts=$(printf "${hosts}\n${host}:${username}:${port}:${hosthashtopuspath}:${hosthashcatpath}:${platform}:${driverversion}:${download}")
+fi
+
+done<<<"$a"
+
+hosts=`echo "$hosts" | tail -n +2`
+#echo "$hosts"
+
+
+}
+
+
+
+parseconfigfile() {   # funkce na cteni konfiguracniho souboru a nalezeni konfiguracnich hodnot
+
+OLDIFS=$IFS
+IFS=$'\n'
+
+if [ ! -f "$1" ]; then
+      echo -e "\nConfiguration file doesn't exist!\n"
+      #usage
+fi
+
+
+config=`cat "$1" | sed -e 's/\#.*$//' -e '/^[\ \t]*$/d' -e 's/[\ \t]*$//' -e 's/[\ \t]\+/\ /'`
+# odstrani komentare, prazdne radky, prazdna mista na konci radku a prebytecne misto mezi direktivou a hodnotou
+
+# read config file line by line
+for line in $config
+do
+
+# options are case insensitive
+Option=`echo $line | cut -d\  -f1 | tr "[A-Z]" "[a-z]"` 
+# values are NOT
+Value=`echo $line | cut -d\  -f2-`
+      
+if [ ! -z "$Value" ]; then
+  case "$Option" in
+      "sshusername" )
+            sshusername="$Value"
+            ;;
+      "sshport" )
+            sshport="$Value"  
+        ;;
+      "oclhashcatpath" )
+            oclhashcat="$Value"
+            ;;
+      "cudahashcatpath" )
+            cudahashcat="$Value"
+            ;;
+      "hashcatdownload" )
+            hashcatdownload="$Value"
+            ;;
+      "hashtopusserver" )
+            hashtopusserver="$Value"
+            ;;
+      "hashtopuspath" )
+            hashtopuspath="$Value"
+            ;;
+      "hashtopuslog" )
+            hashtopuslog="$Value"
+            ;;
+      "hashtopuspgid" )
+            hashtopuspgid="$Value"
+            ;;
+      "voucherfile" )
+            if [ ! -f "$Value" ]
+              then
+                echo "ERROR: Voucher file \"$Value\" from configuration doesnt exist."
+                exit
+            fi
+            voucherfile="$Value"
+            ;;
+      * )
+             echo "Ignoring '$Option' option from cfg file."
+             ;;
+     esac
+  
+else 
+  echo "Option $Option is blank in $configfile, using default value."  
+fi
+
+done
+
+IFS=$OLDIFS
+
+
+}
+
+printvalues() {
+  echo "sshusernam: " $sshusername
+  echo "sshport: " $sshport
+  echo "hashtopusserver: " $hashtopusserver 
+  echo "hashtopuspath: " $hashtopuspath 
+  echo "hashtopuslog: " $hashtopuslog
+  echo "hashtopuspdig: " $hashtopuspgid
+
+  echo "oclhashcat: " $oclhashcat
+  echo "cudahashcat: " $cudahashcat
+  echo "hashcatdownload: " $hashcatdownload
+
+  echo "voucherfile: " $voucherfile
+}
+
+
+
+getvoucher() {
+  if [ -s "$voucherfile" ] ; then
+  head -n 1 "$voucherfile"
+  fi
+}
+
+deletevoucher() {
+  sed -i -e 1d "$voucherfile"
+}
+
+start() {
+while IFS=":" read host username port hashtopuspath hashcatpath platform driverversion download notes; do
+  if [ "$download" == "yes" ] ; then
+    hashtopuscmd="$hashtopusexe"
+  else 
+    hashtopuscmd="\"$hashtopusexe\" nodownload"
+  fi
+  
+  echo -n "host $host: " 
+  voucher=`getvoucher`
+  
+
+ ssh -n -p $port ${username}@${host} bash -c "'
+  currwd=\`pwd\`
+  mkdir -p \"$hashtopuspath\"
+  [ -d \"$hashtopuspath\"/\"hashcat\" ] || if [ ! -d \"$hashcatpath\" ] ; then  echo Hashcat directory $hashcatpath on host $host doesnt exit!; exit; fi
+  [ -d \"$hashtopuspath\"/\"hashcat\" ] || if [[ \"$hashcatpath\" = /* ]]; then ln -f -s \"$hashcatpath\" \"$hashtopuspath\"/hashcat ; else ln -f -s \"\${currwd}/$hashcatpath\" \"$hashtopuspath\"/hashcat ; fi
+  cd \"$hashtopuspath\"
+  if [ ! -s \"$hashtopusexe\" ] ; then wget -nv -O \"$hashtopusexe\" ${hashtopusserver}/hashtopus.exe ; if [ ! -s \"$hashtopusexe\" ] ; then echo hashtopus download was not successful! ; exit ; fi ; echo -n \"${hashtopusserver}/server.php\" >> \"$hashtopusexe\" ; fi
+  if [ \"$platform\" == \"ati\" ] ; then if [ ! -f \"catalyst_ver.txt\" ] ; then echo \"$driverversion\" > catalyst_ver.txt; fi; fi
+  voucherused=0
+  if [ ! -f hashtopus.token ] ; then if [ -z \"$voucher\" ] && [ ! -f hashtopus.voucher ]; then echo ERROR: no voucher available, cant register ; exit ; else echo registration ... ; if [ -s hashtopus.voucher ] ; then echo using already populated hashtopus.voucher ; else echo -n $voucher > hashtopus.voucher; voucherused=1; fi ; fi ; fi
+  mono $hashtopuscmd > \"$hashtopuslog\" & ps -o pgid= -p "\"'$!'\"" > \"$hashtopuspgid\"
+  if [ "\"'$?'\"" -eq 0 ] ; then if [ -f hashtopus.token ] ; then echo hashtopus started; else sleep 1 ; if [ -f hashtopus.token ] ; then echo hashtopus started; else if [ -f hashtopus.voucher ] ; then echo hashtopus started but login to server failed, maybe voucher \$(cat hashtopus.voucher) is not valid - then create it on server, check log below: ; cat \"$hashtopuslog\" ; echo ; else echo hashtopus NOT started; fi ; fi ; fi ; else echo hashtopus NOT started; fi
+  pgid=\$(cat \"$hashtopuspgid\")
+  echo \"\$pgid\" | tr -d [[\:blank\:]] > \"$hashtopuspgid\"
+  if [ "\"'$voucherused'\"" -eq 1 ] ; then exit 100 ; fi
+  '"
+  if [ "$?" -eq 100 ] ; then
+    echo "deleting voucher"
+    deletevoucher
+  fi
+done <<< "$hosts"
+
+}
+
+stop() {
+  while IFS=":" read host username port hashtopuspath hashcatpath notes; do
+    echo -n "host $host: "
+ssh -n -p $port ${username}@${host} bash -c "'
+ cd \"$hashtopuspath\"
+ if [ ! -f \"$hashtopuspgid\" ] ; then echo hashtopus NOT stopped, \"$hashtopuspgid\" does not exist on host; exit; fi
+ pgid=\$(cat \"$hashtopuspgid\")
+ kill -- -\$pgid
+ if [ "\"'$?'\"" -eq 0 ] ; then echo hashtopus stopped; rm \"$hashtopuspgid\"; fi
+ '"
+done <<< "$hosts"
+}
+
+
+
+parseconfigfile "$configfile"
+parsehostsfile "$hostsfile"
+
+case "$command" in
+
+start)  
+  start
+    ;;
+stop)  
+  stop
+    ;;
+*) echo "bad command, usage:"
+   ;;
+esac
+
+
+
+
