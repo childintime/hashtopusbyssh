@@ -26,10 +26,13 @@ hashtopuspath="hashtopus"
 hashtopuslog="hashtopus.log"
 hashtopuspgid="hashtopus.pgid"
 
+#vouchers
+voucherfile="hashtopus.vouchers"
+
+
 # non configurable variables
 hashtopusexe="hashtopus.exe"
 
-voucherfile="hashtopus.vouchers"
 
 if [ $# -lt 1 ]
 then
@@ -93,7 +96,7 @@ if [ -z "$a" ] ; then
   exit
 fi
 
-while IFS=":" read host username port hosthashtopuspath hosthashcatpath platform driverversion download notes
+while IFS=":" read host username port hosthashtopuspath hosthashcatpath platform driverversion download beforestart afterstop anotes
 do
 
 
@@ -140,7 +143,7 @@ if [ -z "$host" ]; then
     download="$hashcatdownload"
   fi
 
-  hosts=$(printf "${hosts}\n${host}:${username}:${port}:${hosthashtopuspath}:${hosthashcatpath}:${platform}:${driverversion}:${download}")
+  hosts=$(printf "${hosts}\n${host}:${username}:${port}:${hosthashtopuspath}:${hosthashcatpath}:${platform}:${driverversion}:${download}:${beforestart}:${afterstop}:${notes}")
 fi
 
 done<<<"$a"
@@ -225,8 +228,6 @@ fi
 done
 
 IFS=$OLDIFS
-
-
 }
 
 printvalues() {
@@ -244,8 +245,6 @@ printvalues() {
   echo "voucherfile: " $voucherfile
 }
 
-
-
 getvoucher() {
   if [ -s "$voucherfile" ] ; then
   head -n 1 "$voucherfile"
@@ -257,17 +256,24 @@ deletevoucher() {
 }
 
 start() {
-while IFS=":" read host username port hashtopuspath hashcatpath platform driverversion download notes; do
+while IFS=":" read host username port hashtopuspath hashcatpath platform driverversion download beforestart afterstop notes; do
+  echo -n "host $host: " 
+
+  if [ -f "$beforestart" ] ; then
+    ssh -p $port ${username}@${host} bash -s < "$beforestart"
+  else 
+    echo "WARNING: \"$beforestart\" file to run on host before hashtopus start doesnt exist"
+  fi
+
   if [ "$download" == "yes" ] ; then
     hashtopuscmd="$hashtopusexe"
   else 
     hashtopuscmd="\"$hashtopusexe\" nodownload"
   fi
-  
-  echo -n "host $host: " 
-  voucher=`getvoucher`
-  
 
+  voucher=`getvoucher`
+
+#printvalues
  ssh -n -p $port ${username}@${host} bash -c "'
   currwd=\`pwd\`
   mkdir -p \"$hashtopuspath\"
@@ -293,7 +299,7 @@ done <<< "$hosts"
 }
 
 stop() {
-  while IFS=":" read host username port hashtopuspath hashcatpath notes; do
+  while IFS=":" read host username port hashtopuspath hashcatpath platform driverversion download beforestart afterstop notes; do
     echo -n "host $host: "
 ssh -n -p $port ${username}@${host} bash -c "'
  cd \"$hashtopuspath\"
@@ -302,10 +308,25 @@ ssh -n -p $port ${username}@${host} bash -c "'
  kill -- -\$pgid
  if [ "\"'$?'\"" -eq 0 ] ; then echo hashtopus stopped; rm \"$hashtopuspgid\"; fi
  '"
+
+  if [ -f "$afterstop" ] ; then
+    ssh -p $port ${username}@${host} bash -s < "$afterstop"
+  else 
+    echo "WARNING: \"$afterstop\" file to run on host after hashtopus stop doesnt exist"
+  fi
 done <<< "$hosts"
 }
 
+cleanup() {
+  while IFS=":" read host username port hashtopuspath hashcatpath platform driverversion download beforestart afterstop notes; do
+    echo -n "host $host: "
+ssh -n -p $port ${username}@${host} bash -c "'
+ echo removing directory $hashtopuspath
+ rm -r \"$hashtopuspath\"
+ '"
+done <<< "$hosts"
 
+}
 
 parseconfigfile "$configfile"
 parsehostsfile "$hostsfile"
@@ -317,6 +338,9 @@ start)
   ;;
 stop)
   stop
+  ;;
+cleanup)
+  cleanup
   ;;
 *) 
   echo "bad command, usage:"
