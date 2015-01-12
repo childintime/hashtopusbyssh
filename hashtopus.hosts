@@ -1,6 +1,6 @@
 # hosts configuration file for hashtopusbyssh script
 # configuration file has passwd like syntax, if optional value is blank default value or value from script configuration file is used (if filled), columns:
-# hostname/ip (required):ssh username:ssh port:hashtopus directory on host: hashcat directory on host:platform:driver version:download hashcat (yes/no):notes
+# hostname/ip (required):ssh username:ssh port:hashtopus directory on host: hashcat directory on host:platform:driver version:download hashcat (yes/no):command file on host to be run before hashtopus start:command file on to be run before hashtopus start:notes
 
 # example:
-#localhost::2222:hashtopus::ati:1430:no:my local computer
+#localhost::2222:hashtopus::ati:1430:no:::my local computer
