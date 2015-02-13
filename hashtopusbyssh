@@ -1,12 +1,6 @@
 #!/bin/bash
 
-# v0.1
-
-# TODO:
-#
-# cleanup command?
-# fans!!!!
-# blank options in config file
+# hashtopusbyssh v0.1
 
 # default config options
 
@@ -149,14 +143,13 @@ fi
 done<<<"$a"
 
 hosts=`echo "$hosts" | tail -n +2`
-#echo "$hosts"
 
 
 }
 
 
 
-parseconfigfile() {   # funkce na cteni konfiguracniho souboru a nalezeni konfiguracnich hodnot
+parseconfigfile() {
 
 OLDIFS=$IFS
 IFS=$'\n'
@@ -168,7 +161,7 @@ fi
 
 
 config=`cat "$1" | sed -e 's/\#.*$//' -e '/^[\ \t]*$/d' -e 's/[\ \t]*$//' -e 's/[\ \t]\+/\ /'`
-# odstrani komentare, prazdne radky, prazdna mista na konci radku a prebytecne misto mezi direktivou a hodnotou
+# delete comments, blank lines, ...
 
 # read config file line by line
 for line in $config
